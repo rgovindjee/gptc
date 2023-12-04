@@ -1,0 +1,43 @@
+# Scenario 3: Two airplanes heading in opposite direction, airplane b
+# going same speed than airplane a
+00:00:00.00>pan ALPHE
+00:00:00.00>zoom 1
+00:00:00.00>trail on
+
+00:00:00.00>CRE DL123,B738,N42.67,W85.17,116,FL250,310
+
+# Create a B737-800 with call sign 
+# lat,lon = HASTE   (positions can also be clicked with mouse)
+# hdg = 116 degrees, so flying east, headings can also be clicked by mouse
+# alt = FL250 (so 25000 ft above ISA sea level pressure)
+# speed = 350 (kts, CAS), Mach can also be use deg.g 0.84 or M.84 or M84
+
+# Define a route  
+00:00:00.00>DL123 ORIG GRR
+00:00:00.00>DL123 DEST KBWI
+
+# Edit flight plan: call sign ADDWPT wptname, [alt], [spd]
+# Waypoint are added at the end of the route before destination
+
+00:00:00.00>DL123 addwpt ALPHE,fl250,310
+00:00:00.00>DL123 addwpt CRL,fl250,310
+
+# Insert a waypoint
+
+# Double click shows rotue via POS command
+# POS command can also be used for info on navaids and airports
+# 00:00:00.00>POS DL123
+
+# List route shows route
+# 00:00:00.00>LISTRTE DL123
+
+# Set Resolution Methods to be 0 for ChatGPT to have direct control
+00:00:00.00>RESOFACH 0
+00:00:00.00>RESOFACV 0
+00:00:00.00>RESO OFF
+
+00:00:00.00>CRE DL456,B738,N42.42,W83.78,279,FL250,310
+00:00:00.00>DL456 ORIG SVM
+00:00:00.00>DL456 DEST KMSP,
+00:00:00.00>DL456 addwpt ALPHE,fl250,310
+00:00:00.00>DL456 addwpt PMM,fl250,310  
