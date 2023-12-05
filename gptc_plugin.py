@@ -36,6 +36,24 @@ class GptcPlugin(core.Entity):
         # Make a new controller.
         self.controller = Gptc()
         self.enabled = False
+        self.verbose = False
+        # Separation distances. Both must be satisfied for a warning to be issued.
+        self.min_lat_separation_distance = 5000 # feet
+        self.min_vert_separation_distance = 1000  # feet
+    
+    def lon_to_ft(self, lon):
+        """Convert longitude degrees to feet."""
+        # This is an approximation that works for the US.
+        return lon * 268_560.0
+    
+    def lat_to_ft(self, lat):
+        """Convert latitude degrees to feet."""
+        # This is an approximation.
+        return lat * 364_488.0
+    
+    def m_to_ft(self, m):
+        """Convert meters to feet."""
+        return m * 3.28084 
 
     def create(self, n=1):
         """This function gets called automatically when new aircraft are created."""
@@ -54,27 +72,75 @@ class GptcPlugin(core.Entity):
             self.enabled = False
             scr.echo("GPTC plugin disabled")
 
-    @core.timed_function(name="example", dt=5)
-    def ac_update(self, dt):
-        """Periodic update function for our example entity."""
-        # stack.stack('ECHO Example update: creating a random aircraft')
-        # stack.stack('MCRE 1')
+    @core.timed_function(name="separation_listener", dt=0.5)
+    def separation_listener(self, dt):
+        """
+        Periodic update function to check for separation violations.
+        """
+        # Check if any two aircraft are too close to each other.
+        # If so, send a warning to the sim.
+        for idx1 in range(traf.ntraf):
+            for idx2 in range(idx1 + 1, traf.ntraf):
+                lat_dist = np.sqrt(
+                    self.lat_to_ft(traf.lat[idx1] - traf.lat[idx2]) ** 2
+                    + self.lon_to_ft(traf.lon[idx1] - traf.lon[idx2]) ** 2
+                )
+                vert_dist = np.abs(traf.alt[idx1] - traf.alt[idx2])
+                if (lat_dist < self.min_lat_separation_distance and vert_dist < self.min_vert_separation_distance):
+                    stack.stack(
+                        "ECHO WARNING: Aircraft %s and %s are too close!"
+                        % (traf.id[idx1], traf.id[idx2])
+                    )
+
+    @core.timed_function(name="gptc_update", dt=10)
+    def gptc_update(self, dt):
+        """
+        Periodic update function to call GPTC.
+        Runs every dt seconds, and only calls GPTC if the plugin is enabled.
+        """
         if not self.enabled:
+            # stack.stack(f"ECHO GPTC update: disabled")
             return
+        # stack.stack(f"ECHO GPTC update: enabled")
+
+        # Extract aircraft data from the simulation.
+        # This is a dictionary with the following keys:
+        #   - id: the aircraft id
+        # And the following values:
+        #   - lat: latitude in degrees
+        #   - lon: longitude in degrees
+        #   - alt: altitude in feet
+        #   - spd: speed in knots
+        #   - hdg: heading in degrees
+        if self.verbose:
+            for idx in range(traf.ntraf):
+                print("Aircraft: ", traf.id[idx])
+                print("Lat: ", traf.lat[idx])
+                print("Lon: ", traf.lon[idx])
+                print("Alt: ", traf.alt[idx])
+                print("GroundSpd: ", traf.gs[idx])
+                print("VertSpd: ", traf.vs[idx])
+                print("Hdg: ", traf.hdg[idx])
+        
+        data = {}
+        # Assemble traffic data into a dictionary.
+        for idx in range(traf.ntraf):
+            # TODO(rgg): find what waypoint the aircraft is flying to.
+            data[traf.id[idx]] = {
+                "lat": traf.lat[idx],
+                "lon": traf.lon[idx],
+                "alt": self.m_to_ft(traf.alt[idx]),
+                "gs": traf.gs[idx],
+                "hdg": traf.hdg[idx],
+                "vs": traf.vs[idx],
+            }
+
         # Query the model using simulated data.
-        commands = self.controller.get_command(data=None)
+        commands = self.controller.get_commands(data=data)
+        # commands = []
 
         # Send each command to the sim
         for command in commands:
             print("Sending command: ", command)
             stack.stack(command)
-
-        # I want to print the average position of all aircraft periodically to the
-        # BlueSky console
-        scr.echo(
-            "Average position of traffic lat/lon is: %.2f, %.2f"
-            % (np.average(traf.lat), np.average(traf.lon))
-        )
-        # ac  = 'MY_AC'
-        # wpt = 'SPY'
-        # stack.stack('ADDWPT %s %s' % (ac, wpt))
+            # TODO(rgg): get sim response and send to model, retrying if needed?
