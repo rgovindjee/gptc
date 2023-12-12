@@ -41,7 +41,8 @@ class GptcPlugin(core.Entity):
         self.min_lat_separation_distance = 5000  # feet
         self.min_vert_separation_distance = 1000  # feet
         self.scenario_count = 0  # Number of scenarios run so far.
-        self.violation_count = 0  # Number of violations detected so far. Resets when a new scenario is loaded.
+        # Number of violations detected so far. Resets when a new scenario is loaded.
+        self.violation_count = 0
 
     def lon_to_ft(self, lon):
         """Convert longitude degrees to feet."""
@@ -103,11 +104,12 @@ class GptcPlugin(core.Entity):
                     self.lat_to_ft(traf.lat[idx1] - traf.lat[idx2]) ** 2
                     + self.lon_to_ft(traf.lon[idx1] - traf.lon[idx2]) ** 2
                 )
-                vert_dist = np.abs(traf.alt[idx1] - traf.alt[idx2])
+                vert_dist = self.m_to_ft(np.abs(traf.alt[idx1] - traf.alt[idx2]))
                 if (lat_dist < self.min_lat_separation_distance and vert_dist < self.min_vert_separation_distance):
                     stack.stack(
-                        "ECHO WARNING: Aircraft %s and %s are too close!"
-                        % (traf.id[idx1], traf.id[idx2])
+                        f"ECHO WARNING: Aircraft {traf.id[idx1]} and {traf.id[idx2]} are too close! \
+                            Minimum required vertical separation is {self.min_vert_separation_distance} feet, measured {vert_dist} ft. \
+                            Minimum required lateral separation is {self.min_lat_separation_distance}, measured {lat_dist} ft. "
                     )
                     self.violation_count += 1
 
@@ -148,7 +150,7 @@ class GptcPlugin(core.Entity):
             data[traf.id[idx]] = {
                 "lat": traf.lat[idx],
                 "lon": traf.lon[idx],
-                "alt": self.m_to_ft(traf.alt[idx]),
+                "alt": traf.alt[idx],
                 "gs": traf.gs[idx],
                 "hdg": traf.hdg[idx],
                 "vs": traf.vs[idx],

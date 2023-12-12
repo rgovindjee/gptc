@@ -24,46 +24,43 @@ class Gptc:
             # U-M shortcode
             openai_organization=secrets["OPENAI_organization"],
         )
-        self.mode = "hdg"  # Alt, hdg, or both.
+        self.mode = "spd"  # Alt, hdg, or both.
         if self.mode == "alt":
-            self.prompt_header = "Act as an air traffic controller. \
-Your job is to issue a command to each aircraft, avoid collisions while maintaining overall course. \n\
-You will be interacting with a program that simulates air traffic. \n\
-Please return simulator commands in the form ALT <aircraft> <altitude>\n\
-The simulator will throw an error if you do not precisely follow this format, or provide extraneous commentary. \n\
-The aircraft in this scenario start at the same altitude and will collide if you don't tell them to go to different altitudes. \n\
-The minimum vertical separation distance is 2000 ft. \n\
-The minimum horizontal separation distance is 5 nautical miles. \n\
-The aircraft prefer to fly at 25000 ft when not close to a collision. \n\
-Here is an example of a successful deconfliction procedure: Airplane A and Airplane B are flying directly at eachother at 310 kts and 25000 feet. Before they get too close, A is told to ascend 2000 ft to 27000, while B is told to descend 2000 ft to 23000. The aircraft are still heading towards one another but are at different altitudes. \n\
-\nThe following is a list of aircraft in the area: \n"
+            # Load prompt from file.
+            with open("alt_prompt.txt", "r", encoding='utf-8') as f:
+                self.prompt_header = f.read()
         elif self.mode == "hdg":
-            self.prompt_header = "Act as an air traffic controller. Your job is to issue a command to each aircraft, avoid collisions while maintaining overall course. \
-You will be interacting with a program that simulates air traffic. \
-Please return simulator commands in the form HDG <aircraft> <heading> \
-The simulator will throw an error if you do not precisely follow this format, or provide extraneous commentary. \
-The aircraft in this scenario start at the same altitude and will collide if you don't tell them to go to different headings. \
-The minimum horizontal separation distance is 15 nautical miles. \
-Here is an example of a successful deconfliction procedure: Airplane A and Airplane B are flying directly at each other. Before they get too close, A is told turn north 30 degrees, while B is told to turn south 30 degrees. The aircraft are now heading in different directions. Once they are no longer going to conflict with one another, the aircraft need to resume their previous headings. \
-In this case, DL123 prefers to fly at 115.8 degrees, and DL456 prefers to fly at 271.5 degrees."
+            with open("hdg_prompt.txt", "r", encoding='utf-8') as f:
+                self.prompt_header = f.read()
+        elif self.mode == "spd":
+            with open("spd_prompt.txt", "r", encoding='utf-8') as f:
+                self.prompt_header = f.read()
         else:
             self.prompt_header = "Act as an air traffic controller. \
-                                    Your job is to issue a command to each aircraft, helping them land and avoid collisions. \
-                                    Keep responses short and in the format <aircraft>: <heading> <flight level> <latitude> <longitude> \n\
-                                    The threshold for runway 22L is located at 130.0, 65.0, at FL0 and heading 220.\n\
-                                    The following is a list of aircraft in the area:\n"
-        self.retry_message = "Please try again. Keep responses short and in the format <aircraft>: <heading> <flight level> <latitude> <longitude>. Give one line per aircraft."
+                                    Your job is to issue a command to each aircraft, helping them avoid collisions. \
+                                    Keep responses short and in the format <aircraft>: <heading> <flight level> <latitude> <longitude> \n"
+        self.retry_message = "Please try again. Keep responses short and in the format <command> <aircraft> <value>. Give one line per aircraft."
         self.max_retry = 2
 
     def lon_to_ft(self, lon):
         """Convert longitude degrees to feet."""
-        # This is an approximation that works for the US.
+        # This is an approximation that works for the US for differences between two longitudes.
         return lon * 268_560.0
 
     def lat_to_ft(self, lat):
         """Convert latitude degrees to feet."""
-        # This is an approximation.
+        # This is an approximation that works for differences between two latitudes (anywhere on the Earth's surface).
         return lat * 364_488.0
+
+    def ms_to_knots(self, ms):
+        """Convert m/s to knots."""
+        # This is an approximation.
+        return ms * 1.94384
+
+    def m_to_ft(self, m):
+        """Convert meters to feet."""
+        # This is an approximation.
+        return m * 3.28084
 
     def parse_radar_data(self, data):
         """
@@ -74,16 +71,16 @@ In this case, DL123 prefers to fly at 115.8 degrees, and DL456 prefers to fly at
             - lat: latitude in degrees
             - lon: longitude in degrees
             - hdg: heading in degrees
-            - alt: altitude in feet
-            - gs: ground speed in knots
-            - vs: vertical speed in feet per minute
+            - alt: altitude in m
+            - gs: ground speed in m/s 
+            - vs: vertical speed in m/s
         Generate a natural-language representation of the air traffic data.
         """
         parsed_data = ""
         for id in data:
             parsed_data += f"Aircraft {id} is at lat {data[id]['lat']:.4f}, \
-lon {data[id]['lon']:.4f} with heading {data[id]['hdg']:.1f} at altitude {data[id]['alt']:.0f} ft. \
-{id} has a groundspeed of {data[id]['gs']:.3f} m/s and vertical speed of {data[id]['vs']:.3f} m/s\n"
+lon {data[id]['lon']:.4f} with heading {data[id]['hdg']:.1f} at altitude {self.m_to_ft(data[id]['alt']):.0f} ft. \
+{id} has a groundspeed of {self.ms_to_knots(data[id]['gs']):.3f} knots and vertical speed of {self.m_to_ft(data[id]['vs'])*60:.3f} ft/min\n"
         if len(data) == 2:
             ac1 = list(data.keys())[0]
             ac2 = list(data.keys())[1]
@@ -124,20 +121,17 @@ lon {data[id]['lon']:.4f} with heading {data[id]['hdg']:.1f} at altitude {data[i
         Parse the response from the model.
         """
         lines = response.split("\n")
-        if self.mode == "alt":
-            # Check that all lines start with "ALT".
+        cmd = None
+        if self.mode == "alt" or self.mode == "hdg" or self.mode == "spd":
+            cmd = self.mode.upper()
+        if cmd is not None:
             for line in lines:
-                if not line.startswith("ALT"):
-                    print("Line does not start with ALT.")
+                if not line.startswith(cmd):
+                    print(f"Line does not start with {cmd}.")
                     return False
-        elif self.mode == "hdg":
-            # Check that all lines start with "HDG".
-            for line in lines:
-                if not line.startswith("HDG"):
-                    print("Line does not start with HDG.")
-                    return False
+
         # Check that all lines are short enough.
-        if self.mode == "alt" or self.mode == "hdg":
+        if self.mode == "alt" or self.mode == "hdg" or self.mode == "spd":
             max_line_length = 20
             for line in lines:
                 if len(line) > max_line_length:
