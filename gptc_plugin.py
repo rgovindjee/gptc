@@ -8,8 +8,8 @@ from bluesky import core, stack, traf, scr  # , settings, navdb, sim, tools
 import numpy as np
 
 
-### Initialization function of your plugin. Do not change the name of this
-### function, as it is the way BlueSky recognises this file as a plugin.
+# Initialization function of your plugin. Do not change the name of this
+# function, as it is the way BlueSky recognises this file as a plugin.
 def init_plugin():
     global gptc
     gptc = GptcPlugin()
@@ -38,22 +38,24 @@ class GptcPlugin(core.Entity):
         self.enabled = False
         self.verbose = False
         # Separation distances. Both must be satisfied for a warning to be issued.
-        self.min_lat_separation_distance = 5000 # feet
+        self.min_lat_separation_distance = 5000  # feet
         self.min_vert_separation_distance = 1000  # feet
-    
+        self.scenario_count = 0  # Number of scenarios run so far.
+        self.violation_count = 0  # Number of violations detected so far. Resets when a new scenario is loaded.
+
     def lon_to_ft(self, lon):
         """Convert longitude degrees to feet."""
         # This is an approximation that works for the US.
         return lon * 268_560.0
-    
+
     def lat_to_ft(self, lat):
         """Convert latitude degrees to feet."""
         # This is an approximation.
         return lat * 364_488.0
-    
+
     def m_to_ft(self, m):
         """Convert meters to feet."""
-        return m * 3.28084 
+        return m * 3.28084
 
     def create(self, n=1):
         """This function gets called automatically when new aircraft are created."""
@@ -61,6 +63,22 @@ class GptcPlugin(core.Entity):
         super().create(n)
         # After base creation we can change the values in our own states for the new aircraft
         self.npassengers[-n:] = [randint(0, 150) for _ in range(n)]
+
+    @stack.command
+    def start_gptc_scenario(self, filename=""):
+        """
+        Start the scenario
+        """
+        if filename == "":
+            scr.echo("Please specify a scenario filename.")
+            return
+        # Write a text file with the scenario name, number, and violation count.
+        with open("scenario_results.txt", "a", encoding="utf-8") as f:
+            f.write(f"{filename},{self.scenario_count},{self.violation_count}\n")
+        scr.echo(f"Starting GPTC scenario {filename}")
+        stack.stack(f"LOAD {filename}")
+        self.violation_count = 0
+        self.scenario_count += 1
 
     @stack.command
     def gptc(self, enable="off"):
@@ -91,6 +109,7 @@ class GptcPlugin(core.Entity):
                         "ECHO WARNING: Aircraft %s and %s are too close!"
                         % (traf.id[idx1], traf.id[idx2])
                     )
+                    self.violation_count += 1
 
     @core.timed_function(name="gptc_update", dt=10)
     def gptc_update(self, dt):
@@ -109,8 +128,8 @@ class GptcPlugin(core.Entity):
         # And the following values:
         #   - lat: latitude in degrees
         #   - lon: longitude in degrees
-        #   - alt: altitude in feet
-        #   - spd: speed in knots
+        #   - alt: altitude in feet?
+        #   - spd: speed in knots?
         #   - hdg: heading in degrees
         if self.verbose:
             for idx in range(traf.ntraf):
@@ -121,7 +140,7 @@ class GptcPlugin(core.Entity):
                 print("GroundSpd: ", traf.gs[idx])
                 print("VertSpd: ", traf.vs[idx])
                 print("Hdg: ", traf.hdg[idx])
-        
+
         data = {}
         # Assemble traffic data into a dictionary.
         for idx in range(traf.ntraf):
