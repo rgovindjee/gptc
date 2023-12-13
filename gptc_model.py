@@ -27,13 +27,13 @@ class Gptc:
         self.mode = "spd"  # Alt, hdg, or both.
         if self.mode == "alt":
             # Load prompt from file.
-            with open("alt_prompt.txt", "r", encoding='utf-8') as f:
+            with open("prompts/alt_prompt.txt", "r", encoding='utf-8') as f:
                 self.prompt_header = f.read()
         elif self.mode == "hdg":
-            with open("hdg_prompt.txt", "r", encoding='utf-8') as f:
+            with open("prompts/hdg_prompt.txt", "r", encoding='utf-8') as f:
                 self.prompt_header = f.read()
         elif self.mode == "spd":
-            with open("spd_prompt.txt", "r", encoding='utf-8') as f:
+            with open("prompts/spd_prompt.txt", "r", encoding='utf-8') as f:
                 self.prompt_header = f.read()
         else:
             self.prompt_header = "Act as an air traffic controller. \
